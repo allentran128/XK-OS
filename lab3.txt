@@ -1,0 +1,63 @@
+David Grant (dagr)
+Allen Tran (alltran)
+
+CSE 451/Lab 3
+
+1. Why might an application prefer using malloc and free instead of using sbrk directly?
+
+   Sbrk is a system call which comes with some overhead, and it is also a less
+   desirable interface when the user programmer wants to alloc or free
+   enough bytes for, say, some array.
+
+   The malloc/free user interface allows for a higher level of abstraction such
+   that the user application programmer can worry about allocating/freeing
+   memory for ONE variable. malloc and free are also largely implemented in
+   userspace, and have less system call overhead. (Malloc/free can be thought of
+   as a "buffered" allocation mechanism that sits on top of sbrk.)
+
+2. Explain how file descriptors of ls and wc change when user typed ls | wc in xk's shell.
+
+   Shell: p = pipe();
+   child1 = fork()
+   child1 closes its stdout file and sets its stdout fd to the write-end of p.
+   child1: exec("ls")
+
+   child2 = fork()
+   child2 closes its stdin file and sets its stdin fd to the READ end of p.
+   child2: exec("wc")
+
+   Then ls writes to the pipe and `wc` reads from it without needing to know anything is different.
+
+3. When a syscall completes, user-level execution resumes with the instruction immediately after the syscall; when a page fault exception completes, where does user-level execution resume?
+
+   At the instruction that caused the page fault.
+
+4. How should the kernel decide whether an unmapped reference is a normal stack operation versus a stray pointer dereference that should cause the application to halt? What should happen, for example, if an application calls a procedure with a local variable that is an array of a million integers?
+
+   For xk we say a reasonable stack reference falls between (2G-10pages) <= addr < 2G.
+   We can go a step farther to detect dereferences that fall in this range that couldn't be legitimate stack references
+     by using the x86 stack "red zone" rule, where the compiler may emit stack variables as far as 128 bytes below %rsp.
+     So we can check if (%rsp-128) <= addr < 2G.
+
+   The procedure call with a million-integer array will fail here if elements of the array toward
+      the end are dereferenced, since it exceeeds ten 4096-byte pages.
+
+5. Is it possible to reduce the user stack size at run-time (i.e., to deallocate the user stack when a procedure with a large number of local variables goes out of scope)?  If so, sketch how that might work.
+
+   Yes, that is possible: Check if stack.start (the lowest addr of
+   stack) is SMALLER than ROUNDDOWNPAGE(trapframe->rsp) by X pages where X is a
+   cutoff (some buffer room for the stack). If so, we can deallocate some of
+   those lower pages of the stack. (e.g., sbrk(-num_pages).)
+
+6. The TLB caches the page table entries of recently referenced pages.  When you modify the page table entry to allow write access, how does xk ensure that the TLB does not have a stale version of the cache?
+
+   xk, every time it schedules a process to run, uses switchuvm to reinstall the process' page directory pointer in the %cr3 register.
+   On x86, setting the %cr3 register implicitly flushes the TLB, so all of the mappings will cause TLB misses on the next access
+   and the new permissions in the page table entries will be seen.
+
+===
+
+
+Lab 3 Hours:
+David: 30
+Allen: 25

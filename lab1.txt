@@ -1,0 +1,51 @@
+David Grant (dagr)
+Allen Tran (alltran)
+
+CSE 451/Lab 1
+
+1. The lines printing these sets of info are (in main()):
+   25     cpuid_print();
+   26     e820_print();
+
+2. main() is located at 0xffffffff80100730. This is a virtual address.
+   Addresses in GDB are interpreted as virtual addresses in the context of the
+   current virtual address space, so GDB does *not* work with real physical
+   addresses.
+
+3. xk maps kernel code into the user virtual address space so that kernel-mode
+   system call code can easily and quickly refer to memory addresses in the virtual
+   address space of the user-mode process. (An example is an fread call: the kernel
+   must write to some user-mode buffer's virtual address.)
+
+4. Kernel's kalloc allocates 4096-byte blocks from the physical address space
+   for things like user processes, kernel stack, page table pages and pipe
+   buffers.  The user malloc is a general purpose allocator for user program
+   heap allocations of specific sizes specified by user code.
+
+   The kernel printf (cprintf) is hard-wired to deal with writing to the
+   "console," and acquire an exclusive lock on the console when writing to it.
+   The user printf function is the one from the C standard library and allows
+   you to write the output to any file descriptor. (Since file descriptors are
+   local to user processes, it doesn't make sense for kernel code to deal with
+   usermode file descriptors.)
+
+5. alltraps() is the first function in the stack trace for an executing
+   interrupt handler.
+
+6. The trap frame is 176 bytes:
+
+       (gdb) print sizeof(struct trap_frame)
+       $1 = 176
+
+7.
+#0  sys_write () at kernel/sysfile.c:44
+#1  0xffffffff80107b25 in syscall () at kernel/syscall.c:242
+#2  0xffffffff80105d99 in trap (tf=0xffffffff80fe3f50) at kernel/trap.c:47
+#3  0xffffffff80105a4b in alltraps () at kernel/trapasm.S:20
+#4  0x0000000000000010 in ?? ()
+#5  0x0000000000000000 in ?? ()
+
+
+8.
+David: ~12h
+Allen: ~15h

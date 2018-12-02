@@ -1,0 +1,149 @@
+Lab 3 design doc
+
+sbrk
+
+User requests sbrk(bytes)
+Kernel:
+- If negative:
+   - round the absolute value DOWN to the nearest page.
+   - calc n pages
+   - for n:
+      deallocuvm()
+   - adjust heap region size.
+- Else, if positive:
+   - round UP to the nearest page.
+   - Calc n pages
+   - for n:
+      kalloc page
+      mappages() this new page into user heap VM
+   - adjust heap region size.
+
+
+Special considerations:
+- If kalloc fails on the n'th allocation, we must kfree the first n-1 allocs that
+succeeded.
+
+
+===
+mmap
+** assuming read-only fd for now
+** appending to file is outside of our scope.
+
+We need to define a new kernel `struct mapped_file` containing:
+   inode*
+   refcount
+   num pages
+   spinlock (or sleeplock?)
+
+User requests mmap(fd)
+Kernel:
+- (Assumes fd is open for reading already.)
+- if fd is not within allowable range:
+   - return -1
+- Ensure only ONE mapped file
+   - ensure that proc->mapped_file is already NULL, returning -1 otherwise.
+- Ensure that fd corresponds to a file, and not a pipe/etc.
+- Get inode of fd.
+   - Scan processes list for instance of inode already mapped.
+   - If not exists:
+      - proc->mapped_file = kalloc new mapped_file
+      - initlock(mapped_file->lock)
+      - mqpped_file->pages = PGROUNDUP(inode->size / PGSIZE)
+      - mapped_file->refcount = 1
+      - mapped_file->inode = inode
+      - for 0 <= i < pages:
+         phys_page = kalloc()
+         mappages(
+            start vaddr: 2G + i * PGSIZE
+            num_pages: mapped_file->pages
+            phy_pn: phys_page
+            read/write/user
+            )
+      - now we can readi() for inode->size bytes into vaddr starting at 2GB.
+   - Else (file already mapped in other process):
+      - share other_proc->mapped_file.
+      - lock it
+      - refcount++
+      - unlock it
+      - addr = calculate phys addr of file contents
+      - mappages starting at 2GB, for `mapped_file->pages`, pointing at `addr`
+Questions:
+   Do we add this new space to one of the mem_regions?
+
+Notes:
+usermode apps:
+   - Atomic Read-Write Instructions
+      - Mutual Exclusion, No Race Conditions
+
+munmap
+
+User requests munmap(fd)
+Kernel:
+- If proc->mapped_file set && mmap(fd) matches this fd
+   - with lock(mapped_file.file):
+      - Remove local process' mappings to shared phys mem
+      - reduce ref count of proc->mapinfo.mapped_file
+      - if refcount == 0:
+         kfree(phys mem where file is stored)
+            (could be multiple pages.)
+         kfree(mapped_file struct)
+         proc->mapped_file = NULL
+
+
+
+kernel tasks for making mmap work:
+   - also duplicate mapped region in a fork()
+   - clean this region when process dies.
+      - table of global mapped files w/ reference counting.
+   - any mapped files need to be unmapped upon process exit,.
+
+
+====
+
+
+growing user stack
+
+User read/write to stack
+Kernel:
+- If page fault
+   - Trap into kernel.
+      trap.c's trap() is where we'll need to add code. The default case of the switch statement
+      calls rcr2(), which reads the cr2 register, which contains the faulting virtual address.
+   - Decide if referenced address is within bounds of tf->rsp and tf->rbp
+   - Grow stack by 1 page
+      - Alloc a physical page and map it in.
+      - If this new page falls outside the stack mem_region, extend it.
+      - 1 stack frame or 1 page
+      - Limit of 10 pages total  (Not yet implemented)
+   - Resume execution
+      - In a page fault, %rip is already set to be the failed instruction.
+      - We just return from trap() if we want to re-run the instruction?
+         - yes
+
+====
+
+
+copy on write fork
+
+Note: need synchronization over core map
+
+User calls fork()
+Kernel:
+- Instead of copying over all PTE's in page table from parent to child
+   - share memory regions between parent and child
+      - Idea:
+            Walk through parent PTE's;
+            set all (previously writable, shareable) PTE permission to PTE_RO;
+               must unset PTE_W
+
+            Traverse core map to incr ref count of V2P(PTE addr)
+         Then upon finishing, give a copy of parent's PTE to child (deep copy)
+         FLUSH TLB
+   - When accessing a PTE (in either parent or child)
+      - if PTE_RO, then trap:
+         decr ref core map of V2P(PTE addr)
+         make a deep copy of that PTE into this process' memory
+         update pml4
+            unset PTE_RO and set PTE_W
+         FLUSH TLB
+         return

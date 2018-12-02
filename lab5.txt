@@ -1,0 +1,42 @@
+alltran (Allen Tran), dagr (David Grant)
+
+Grading note:
+  We do not pass the Python script. For some reason, xk stops responding on the 13th crash.
+
+1. What's the purpose of the super block? What fields are in the super block?
+
+The super block holds block numbers that indicate the start of each region on disk.
+We use the superblock when we want to access a disk block in a region given an offset.
+
+struct superblock {
+  uint size;         // Size of file system image (blocks)
+  uint nblocks;      // Number of data blocks
+  uint swapstart;    // Block number of swap region
+  uint bmapstart;    // Block number of first free map block
+  uint inodestart;   // Block number of the start of inode file
+  uint extentstart;  // Block number of the start of extents region
+};
+
+2. What's the purpose of the disk bitmap?
+The bitmap keeps track of which disk blocks are being used in the file system. Each bit represents a disk block.
+
+3. Explain how dirlookup works.
+Takes in a directory inode and reads the dirent contents in a linear search over all of the contents of the directory until it finds a dirent with a matching name otherwise it fails.
+If the correct dirent is found, it will return the inode pointer to the inode associated with that dirent.
+
+4. File delete is not a required feature in lab5. Describe how you can implement it in a crash-safe manner even if the file spans multiple blocks.
+To delete a file, we have to remove the dinode, inode, and dirent entries.
+Removing the inode, we decrement its ref count until it gets deallocated.
+Set up a write-ahead transaction:
+To remove the dinode entry, we zero out the dinode entry in the inode file's data block.
+To remove the dirent entry, we zero out the dirent entry in root's data block.
+Then modify the bit map to deallocate the data blocks (lazy deletion).
+End transaction.
+
+5. Support for multi-block write is not required in lab5. Describe how to extend your current implementation to support it.
+Multi-block write would be implemented as a sequence of one block atomic and crash safe write transactions in the write-ahead log. The write-ahead log would have to support multiple transactions.
+
+6.
+Allen : ~40h
+
+David: same.

@@ -1,0 +1,118 @@
+Lab 4 design doc
+
+Reserve swap space on disks
+  modify: mkfs.c
+
+  Create the region on disk for swapping.
+  We want 8192 pages. Each block is 512 bytes so a page is 8 blocks.
+  So we allocate 8*8192 blocks for this region. (~32MB)
+
+  insert between Super Block and Bitmap
+
+Runtime support for swap space:
+
+  We statically allocate a swap manager which holds 8192 swap entries.
+
+  Each swap entry contains:
+    pid
+    va
+    ref_count
+
+  We statically allocate 8192 of these structs in memory. They're in 1-1 correspondence
+    with the 8192 pages of swap space created by mkfs.
+
+  We'll need a spinlock that should be acquired anytime we:
+    read/modify a swap page's fields
+
+Disk read/write
+  reference: inc/buf.h (struct buf)
+  methods: bread, bwrite
+
+  idea:
+    read disk to buf,
+    move buf data to memory addr,
+    release buf
+  reasoning:
+    exists a buffer cache layer under block level API
+    bread reads from block cache if possible
+    bwrite flush the data in a buf to disk
+    buf layer handles multiple reader/writers via ref counts
+    brelse decrements the ref count until deallocate buffer cache entry
+
+LRU eviction -- Additional Reference Bit Alg.
+
+  Asynchronous LRU policy:
+    Upon timer interrupts, we check the next X number of pages to see if it was not used
+      recently, then we update a new field in the core_map entry, an uint32_t refbits.
+      If it is not used append a right shift 1 bit, append a 1 in the leftmost position.
+
+    Upon page faults, we scan each core_map for the smallest refbit then evict the
+      corresponding page.
+
+    This effectively approximates LRU with a history of 32 glances at each page.
+
+Kalloc
+  We need to modify kalloc so that when the max page usage threshold (~8 pages)
+  is reached, it starts to evict pages to the swap area in order to maintain this buffer
+  for kernel usage.
+
+  kalloc():
+    if not kernel and free_pages < 8:
+      evict a page to swap area
+    (continue kalloc as normal)
+
+Trap handler for page faults:
+  If the PTE has PTE_SWAP and ~PTE_P:
+    evict a page from current process if 8p threshold dictates
+    restore the page from the swap.
+
+Fork - copyuvm_shallow()
+  Upon forking, if there are swapped pages from parent, we need to update the swap manager:
+    If swap bit is set,
+      The corresponding entry's ref count is incremented.
+    Else,
+      Perform regular CoW fork
+
+Process exit - freevm()
+  What will happen when exiting a process whose memory is in the swap region?
+    scan through pml4 of process
+    for all PTE where PTE_Swap is set:
+      decr swap region entry ref count
+      // (a zero refcount allows the swap region to be reused.)
+      if refcount now zero:
+        pages_in_swap--
+
+
+Notes on various corner cases:
+    Keep track of a memory page's state
+      When should we flush pages to swap region and when should we load them back?
+        When we run out of space in main memory with buffer room of 50 pages
+        Bring in, when the page is referenced
+        Do this in trap.c
+
+      How should we keep track of a memory page that is in swap region?
+        Given a swap_region instance in the swap, ref count > 0 will determine active entry,
+          and pid/va is enough to restore coremapentry.
+
+        From the PTE:
+          PTE_SWAP & ~PTE_P : valid page in swap. Swapped swap_region indexed by PPN.
+
+      What should happen when a swapped memory page is shared via copy-on-write fork?
+        update ref count
+
+      Is there a set of memory pages you don't want to flush to swap?
+        kernel memory
+          a page with coremapentry->pid == -1
+
+      What will happen when forking a process some of whose memory is in the swap
+      region?
+        update the ref count inside swap region struct
+
+      How will the page table entry change for memory pages that are swapped out?
+        change PPN portion of entry to refer to the index of the page in the swap.
+        turn on PTE_SWAP bit
+        switchuvm (?)
+
+      implementation:
+        define bit(9) to be PTE_Swap bit
+

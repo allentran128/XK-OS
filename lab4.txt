@@ -1,0 +1,44 @@
+David Grant (dagr)
+Allen Tran (alltran)
+
+CSE 451/Lab 4
+
+
+1. How is the core_map allocated? Is it through kalloc? Will the core_map ever be evicted to disk?
+
+The core map is statically allocated at a very low address upon booting xk.
+It is not allocated via kalloc. Therefore the eviction policy will never
+touch a region of memory containing the core_map.
+
+2.  mkfs.c has functions like xint, xshort. What is the purpose of them?
+
+These functions reverse the byte order of their arguments. They are used to
+ensure that the files read disk and the format of the disk is in little endian.
+xk is implemented using the x86 architecture which uses little endian. Outside xk's scope
+is the disk and what format the disk uses. Therefore to ensure that xk reads the data from disk
+corectly, it uses xint and xshort to ensure little endianess.
+
+3. What will happen if xk runs out of block cache entries?
+
+When xk is out of block cache entries there are three cases that may occur upon the next
+block cache lookup request:
+   - The requested block is already in the cache, return the cached block.
+   - The requested block is not in the cache and there is some unused or non-dirty entry.
+      Recycle one of those entries and use it.
+   - The requested block cache is not in the cache and there is no unused or clean cache,
+      xk panics.
+
+4. mmap can map a file to different user memory space. Would your design for
+swap need to change if shared page can have different virtual addresses? How
+will you change it?
+
+Yes, because our core map entry struct only stores a single va, we can not
+support mmap. To support mmap we would need to keep a linked list of (pid, uva)
+entries so that when we restore swapped pages, we can recover the correct
+process-local PTE entry for each (pid, uva) pair.
+
+
+Time spent:
+===
+Allen: 26h
+David: ~30h

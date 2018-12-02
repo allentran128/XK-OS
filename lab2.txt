@@ -1,0 +1,46 @@
+David Grant (dagr)
+Allen Tran (alltran)
+
+CSE 451/Lab 2
+
+1. Describe the relationship between scheduler, sched, swtch.
+
+scheduler -
+  One per cpu, handles the scheduling routine for that cpu.
+    Picks what process to run,
+    Runs it,
+    Returns control to scheduler
+
+sched -
+  Calling sched will prompt the current running process to
+  switch to the scheduler.
+
+swtch -
+  Assembly implementation of switching between a process and the
+  scheduler.
+
+Scheduler decides what process to run, it calls swtch to switch
+control to that process. After the process finishes, or when
+it needs to return control to the scheduler, it calls sched. The cycle repeats.
+
+2. Describe why the child process is able to return to user-level
+application where fork is called.
+
+The child process essentially copied it's parent's proc struct
+except for the pid. So when the scheduler decides to run the child,
+it uses the copied mem_regions[CODE] and trap_frame->rip to resume
+where it was in executing instructions. Then trapret restores the
+trap frame contents to the CPU registers, calls iretq, and the new
+user process begins executing where fork was called in the parent.
+
+3. How does process kill work in xk? What is its relationship to exit?
+
+Kill takes a pid and marks that pid's process to be exited as soon as that
+process is rescheduled. Then exit() is called from the kernel execution context
+of the target process itself. Basically, kill causes the target process
+to exit itself.
+
+4. Hours
+
+Allen - 20
+David - 30

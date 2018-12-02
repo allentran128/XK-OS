@@ -1,0 +1,156 @@
+Steps
+Disk Layout [DONE]
+-Create a new region on disk, Extents,
+-Placed after the inodes region
+-The data for each file is stored in the extents region. On boot, each file is contiguously allocated. The lab will ask you to add the ability to extend files; this will require using the disk region beyond the end of the pre-allocated extents.
+
+Write to file [DONE]
+-modify writei in fs.c
+-use bread/bwrite/brelse interface
+-reference readi for how to format the data
+-modify open system call
+-allow opening of O_RDWR
+
+Thoughts on writei
+   Method 1:
+      for each writei call we
+      find a suitable continuous blocks in extent region
+         -linear scan on bitmap
+         -use sb.extentstart as a starting index into bitmap
+      Pros: simple, allows for up to EXTENT_PER_INODE writei calls on that file
+      Note: since deletion is not an issue, we wont have fragmentation
+      Cons: waste space
+
+   Method 2:
+      Compact as much as possible, write to the end of current block and start new if needed
+      Pros: saves space
+      Cons: more complex, need to keep track of offsets in inode struct
+
+Thoughts on Open Sys Call
+   Modify: kernel/file.c
+   Have to add cases for Write, Read/Write for most methods
+      No, we support write
+
+Append to a file [DONE]
+-issue: extending size of a file
+   Call to writei will have a size in bytes, convert that to blocks then add to inode's size field
+-allocate additional space for the file
+   Use bitmap to find continuous blocks
+-use the extra ptr space inode struct
+   Not an issue, we're using static inline structure
+
+Creating files
+-create from the root directory
+   We have to append the file's parent to root dir
+-impl by passing O_CREATE to the open system call
+-creates an empty inode on disk, chainge the root directory to add a link to the new file, and change bitmap on disk.
+   Note: Must use lock for bitmap
+
+Thoughts:
+   Create a dinode, write to disk, then when needed call iload to load it into memory
+
+===
+
+Crash-safe FS
+
+-journaling, write-ahead log
+-between inode and block cache layer
+
+There will only be one transaction at a time, so the following flow will work:
+   begin trans
+   (...bunch of log writes...)
+   commit trans (<-- apply the changes and erase the log entries)
+
+Tasks:
+mkfs:
+   - Add 30-block log area to filesystem after swap region.
+   - Track this in the superblock.
+
+O/S kernel:
+Support for storing log records:
+   We need one for each kind of log entry. These are:
+      Begin
+      Write
+      Commit
+
+   We'll have a struct for each record type, each having its entry type as the first field:
+
+      enum {
+         BEGIN,
+         WRITE,
+         COMMIT
+      };
+
+      struct fslog_begin {
+         type; // = BEGIN
+         transaction_id; // to correlate log entries
+         bool executed; // whether the entire transaction has been successfully replayed
+         bool complete; // whether the transaction is complete
+      };
+
+      struct fslog_write {
+         type; // = WRITE
+         transaction_id;
+         size_t blockno;
+      };
+
+      struct fslog_commit {
+         type; // COMMIT
+         transaction_id;
+      };
+
+
+   For simplicity, we store one record per log block. Writes appear in block pairs: {fslog_write, (BSIZE payload)}.
+
+   We'll read and write the memory backing these structs directly to the disk
+      when dealing with logs.
+   When reading, we can do a loop like this:
+
+      while (not seen entire log):
+         type = *((int*)ptr)
+         if type == BEGIN:
+            struct fslog_begin* beginRecord = (struct fslog_begin*) ptr;
+            ptr += sizeof(struct fslog_begin);
+         elif type == WRITE:
+            struct fslog_write* writeRecord = (struct fslog_write*) ptr;
+            ptr += sizeof(struct fslog_write);
+         elif ...:
+
+Create new FS transaction API. The one suggested in the doc looks pretty good.
+   begin_trans():
+      Write a 'begin' record to the start of the log.
+
+   log_write()
+      This is a replacement for bwrite and has the same interface. This appends
+      a 'write' record to the log containing everything needed to do the write.
+      (The destination block#, the 512 bytes of data...)
+
+      Keep these blocks in the cache by setting the dirty bit.
+
+   commit_trans()
+      - Writes the 'commit' record
+      - Marks the Begin record as 'complete'
+      - run recover_trans()
+
+   recover_trans()
+
+      If there is a complete, unexecuted transaction in the log:
+         - Run the recovery routine on the log, playing the log records and
+            performing their writes to the ultimate locations on disk.
+         - If successful, invalidate the current transaction in the log. (Mark
+            the 'begin' record as having been executed.)
+         - flush the invalidated log block(s) back to disk. (Just the block
+            containing the begin record, maybe.)
+
+   Locking: On Piazza the TAs claim that there's only a single transaction at a time.
+      Not sure if we need some kind of synchronization so that two logical FS transactions
+      do not overlap.
+
+   Since we're invalidating the begin message instead of wiping the log blocks,
+   we tag records with a correlating transaction ID so we know the records are together, and aren't
+   partially from some prior crashed transaction.
+
+Startup check
+Upon startup, just run recover_trans(). This will be a no-op if there's nothing complete/unexecuted
+   in the log, and will replay a transaction if there is one, marking it executed.
+

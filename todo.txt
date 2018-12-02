@@ -1,0 +1,21 @@
+step through creating a file to see if it is in the correct place
+
+also, add support for writing beyond 1 block (512 bytes)
+   where it reads from next, et.
+   check how inodes do that
+
+dirent[] at buf(rootino.data[0].startblbkn) and traverse
+if there are null entries(free)
+   keep in mind the nblock number as limit to how far you look
+
+
+try appending '\' to file names after fixing above
+
+clean; run qemu look at debugger statments
+
+look into the structure of root
+   ls doesnt work => is root corrupted
+   might solve issue of filei
+
+redo writei
+

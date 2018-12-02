@@ -1,0 +1,31 @@
+define kern
+  symbol out/ELF
+end
+
+define sh
+  symbol out/user/_sh
+end
+
+define init
+  symbol out/user/_init
+end
+
+define initcode
+  symbol out/initcode.out
+end
+
+define pass_sc
+  while ($cs == 8)
+    ni
+  end
+end
+
+set arch i386:x86-64:intel
+target remote 0.0.0.0:1234
+symbol out/ELF
+b main
+c
+disconnect
+set arch i386:x86-64
+target remote 0.0.0.0:1234
+c
