@@ -10,13 +10,10 @@ xk's baseline code is a complete, bootable operating system.
 Implement system calls: open, read, write, close, dup and pipe.
 
 ### Lab 2
-Implement Multiprocessing with locks, and additional system calls: exec, fork, wait and exit.
+Implement multiprocessing with locks, and additional system calls: exec, fork, wait and exit.
 
 ### Lab 3
-Implement sbrk to adjust the size of the user-level heap.
-Implement memory-mapped I/O for processes that map the same file. This memory region acts as shared memory between the porocesses.
-Therefore locks and atomic read-write instructions were used to ensure mutual exclusion and data race freedom.
-Implement copy-on-write fork to reduce the cost of fork by allowing multiple processes to share the same physical memory, while still behaving as if the memory was copied.
+Implement sbrk to adjust the size of the user-level heap, memory-mapped I/O for processes that map the same file, and copy-on-write fork.
 
 ### Lab 4
 Implemented a LRU page eviction policy and a swap region on disk.
